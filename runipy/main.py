@@ -22,12 +22,16 @@ with warnings.catch_warnings():
         # IPython 3
         from IPython.config import Config
         from IPython.nbconvert.exporters.html import HTMLExporter
+        from IPython.nbconvert.exporters.pdf import PDFExporter
+        from IPython.nbconvert.writers.files import FilesWriter
         from IPython.nbformat import \
             convert, current_nbformat, reads, write, NBFormatError
     except ShimWarning:
         # IPython 4
         from traitlets.config import Config
         from nbconvert.exporters.html import HTMLExporter
+        from nbconvert.exporters.pdf import PDFExporter
+        from nbconvert.writers.files import FilesWriter
         from nbformat import \
             convert, current_nbformat, reads, write, NBFormatError
     except ImportError:
@@ -66,9 +70,14 @@ def main():
         '--overwrite', '-o', action='store_true',
         help='write notebook output back to original notebook'
     )
-    parser.add_argument(
+    format_grp = parser.add_mutually_exclusive_group()
+    format_grp.add_argument(
         '--html', nargs='?', default=False,
         help='output an HTML snapshot of the notebook'
+    )
+    format_grp.add_argument(
+        '--pdf', nargs='?', default=False,
+        help='output a PDF snapshot of the notebook'
     )
     parser.add_argument(
         '--template', nargs='?', default=False,
@@ -208,6 +217,36 @@ def main():
             convert(nb_runner.nb, current_nbformat)
         )
         codecs.open(args.html, 'w', encoding='utf-8').write(output)
+
+    elif args.pdf is not False:
+        if args.pdf is None:
+            # if --html is given but no filename is provided,
+            # come up with a sane output name based on the
+            # input filename
+            if args.input_file.endswith('.ipynb'):
+                args.pdf = args.input_file[:-6] + '.pdf'
+            else:
+                args.pdf = args.input_file + '.pdf'
+
+        if args.template is False:
+            exporter = PDFExporter()
+        else:
+            exporter = PDFExporter(
+                config=Config({
+                    'PDFExporter': {
+                        'template_file': args.template,
+                        'template_path': ['.', '/']
+                    }
+                })
+            )
+
+        logging.info('Saving PDF snapshot to %s' % args.pdf)
+        output, resources = exporter.from_notebook_node(
+            convert(nb_runner.nb, current_nbformat)
+        )
+        writer = FilesWriter()
+        writer.build_directory = os.path.dirname(args.pdf)
+        writer.write(output, resources, os.path.splitext(os.path.basename(args.pdf))[0])
 
     nb_runner.shutdown_kernel()
 
